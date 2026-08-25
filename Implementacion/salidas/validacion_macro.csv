@@ -1,0 +1,9 @@
+﻿prueba;resultado;estado
+Registros del modelo base disponibles;TRUE;APROBADO
+Ventas diarias concilian con el total general;TRUE;APROBADO
+Agosto identificado como periodo parcial;TRUE;APROBADO
+Pronostico sin valores negativos o no finitos;TRUE;APROBADO
+Validacion historica del pronostico disponible;TRUE;APROBADO
+Todos los clientes tienen un segmento;TRUE;APROBADO
+Todos los productos tienen un segmento temporal;TRUE;APROBADO
+La serie temporal usa solo meses completos;TRUE;APROBADO
