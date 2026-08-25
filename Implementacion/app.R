@@ -1,6 +1,8 @@
 # =============================================================================
 # MACROACTIVIDAD - DASHBOARD EJECUTIVO FINAL
 # =============================================================================
+invisible(try(Sys.setlocale("LC_CTYPE", "English_United States.utf8"), silent = TRUE))
+
 suppressPackageStartupMessages({
   library(shiny)
   library(bslib)
@@ -22,6 +24,19 @@ moneda_ui <- function(x, decimales = 0) {
   paste0("$", format(round(x, decimales), big.mark = ",", nsmall = decimales, scientific = FALSE))
 }
 
+mostrar_modelo <- function(x) {
+  fifelse(x == "Regresion logaritmica", "Regresión logarítmica",
+    fifelse(x == "Promedio reciente por dia", "Promedio reciente por día", x))
+}
+
+mostrar_segmento_cliente <- function(x) {
+  fifelse(x == "Clientes estrategicos", "Clientes estratégicos", x)
+}
+
+acortar_texto <- function(x, maximo = 42L) {
+  fifelse(nchar(x) > maximo, paste0(substr(x, 1L, maximo - 3L), "..."), x)
+}
+
 ui <- navbarPage(
   title = div(class = "brand-title", span("HANASKA"), tags$small("Centro de Distribución | Inteligencia de Negocios")),
   id = "navegacion",
@@ -29,16 +44,16 @@ ui <- navbarPage(
   theme = bs_theme(version = 5, bootswatch = "flatly", primary = azul, secondary = celeste,
                    bg = "#F4F7FB", fg = "#172033", base_font = font_google("Inter")),
   header = tagList(
-    tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=1")),
+      tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=2")),
     div(class = "filter-strip",
       fluidRow(
         column(3, dateRangeInput("fechas", "Periodo", start = metadata$fecha_inicio,
           end = metadata$fecha_corte, min = metadata$fecha_inicio, max = metadata$fecha_corte,
-          format = "dd/mm/yyyy")),
+          format = "dd/mm/yyyy", separator = " a ")),
         column(2, selectInput("empresa", "Empresa", c("TODAS", sort(unique(ventas$empresa))))),
-        column(2, selectInput("jefe", "Jefe operativo", c("TODOS", sort(unique(ventas$jefe_operativo))))),
+        column(2, selectInput("jefe", "Responsable / jefe operativo", c("TODOS", sort(unique(ventas$jefe_operativo))))),
         column(2, selectInput("clasificacion", "Clasificación", c("TODAS", sort(unique(ventas$clasificacion))))),
-        column(2, selectizeInput("producto", "Producto", c("TODOS", sort(unique(ventas$producto))),
+        column(2, selectizeInput("producto", "Producto", choices = NULL,
           options = list(placeholder = "Buscar producto...", maxOptions = 1000))),
         column(1, actionButton("limpiar", "Limpiar", class = "btn-reset"))
       )
@@ -60,8 +75,8 @@ ui <- navbarPage(
         column(3, div(class = "kpi-card kpi-orange", span("Clientes atendidos"), h3(textOutput("kpi_clientes", inline = TRUE)), tags$small("Clientes con actividad")))
       ),
       fluidRow(
-        column(8, div(class = "chart-card", div(class = "card-heading", h4("Evolucion mensual"), span("Los meses parciales no se comparan como cierre mensual")), plotOutput("grafico_tendencia", height = "390px"))),
-        column(4, div(class = "chart-card", div(class = "card-heading", h4("Composicion de ventas"), span("Participacion por clasificacion")), plotOutput("grafico_clasificacion", height = "390px")))
+        column(8, div(class = "chart-card", div(class = "card-heading", h4("Evolución mensual"), span("Los meses parciales no se comparan como cierre mensual")), plotOutput("grafico_tendencia", height = "390px"))),
+        column(4, div(class = "chart-card", div(class = "card-heading", h4("Composición de ventas"), span("Participación por clasificación")), plotOutput("grafico_clasificacion", height = "390px")))
       ),
       fluidRow(
         column(4, div(class = "mini-kpi", span("Productos despachados"), strong(textOutput("kpi_productos", inline = TRUE)))),
@@ -73,11 +88,17 @@ ui <- navbarPage(
 
   tabPanel("Análisis comercial",
     div(class = "page-wrap",
-      div(class = "section-intro", h2("Tendencias, responsables y productos"), p("Los resultados se actualizan con los filtros superiores.")),
+      div(class = "section-intro", h2("Responsables, clientes y productos"),
+        p("El valor de ventas representa impacto económico; la frecuencia de egresos representa rotación.")),
       fluidRow(
-        column(7, div(class = "chart-card", h4("Ventas por jefe operativo"), plotOutput("grafico_jefes", height = "440px"))),
-        column(5, div(class = "chart-card", h4("Productos con mayor frecuencia"), plotOutput("grafico_productos", height = "440px")))
+        column(6, div(class = "chart-card", h4("Ventas por responsable comercial / jefe operativo"), plotOutput("grafico_jefes", height = "440px"))),
+        column(6, div(class = "chart-card", h4("Productos con mayor valor de ventas"), plotOutput("grafico_productos_valor", height = "440px")))
       ),
+      fluidRow(
+        column(6, div(class = "chart-card", h4("Clientes con mayor valor de ventas"), plotOutput("grafico_clientes", height = "440px"))),
+        column(6, div(class = "chart-card", h4("Productos con mayor frecuencia de egresos"), plotOutput("grafico_productos", height = "440px")))
+      ),
+      div(class = "chart-card", h4("Mapa de calor mensual por clasificación"), plotOutput("grafico_calor", height = "390px")),
       fluidRow(
         column(6, div(class = "table-card", h4("Resumen mensual"), tableOutput("tabla_mensual"))),
         column(6, div(class = "table-card", h4("Productos de menor frecuencia"), tableOutput("tabla_menores")))
@@ -89,14 +110,19 @@ ui <- navbarPage(
     div(class = "page-wrap",
       div(class = "section-intro", h2("Proyección diaria"), p("La proyección se calcula sobre el periodo completo disponible y se acompaña de una validación histórica.")),
       fluidRow(
-        column(4, div(class = "kpi-card kpi-blue", span("Horizonte"), h3(textOutput("pron_horizonte", inline = TRUE)), tags$small("Días posteriores a la fecha de corte"))),
-        column(4, div(class = "kpi-card kpi-cyan", span("Venta proyectada"), h3(textOutput("pron_total", inline = TRUE)), tags$small("Acumulada para el horizonte"))),
-        column(4, div(class = "kpi-card kpi-green", span("WAPE de validación"), h3(textOutput("pron_wape", inline = TRUE)), tags$small("Error ponderado sobre 28 días")))
+        column(3, div(class = "kpi-card kpi-blue kpi-model", span("Modelo seleccionado"), h3(textOutput("pron_modelo", inline = TRUE)), tags$small("Menor WAPE en cuatro ventanas"))),
+        column(3, div(class = "kpi-card kpi-cyan", span("Horizonte"), h3(textOutput("pron_horizonte", inline = TRUE)), tags$small("Días posteriores a la fecha de corte"))),
+        column(3, div(class = "kpi-card kpi-orange", span("Venta proyectada"), h3(textOutput("pron_total", inline = TRUE)), tags$small("Acumulada para el horizonte"))),
+        column(3, div(class = "kpi-card kpi-green", span("WAPE de validación"), h3(textOutput("pron_wape", inline = TRUE)), tags$small("Error ponderado agregado")))
       ),
       div(class = "chart-card", h4("Ventas observadas y proyección a 30 días"), plotOutput("grafico_pronostico", height = "450px")),
       fluidRow(
-        column(6, div(class = "table-card", h4("Métricas de validación"), tableOutput("tabla_metricas_pronostico"))),
-        column(6, div(class = "table-card", h4("Proyección diaria"), tableOutput("tabla_pronostico")))
+        column(6, div(class = "chart-card", h4("Comparación de modelos"), plotOutput("grafico_comparacion_modelos", height = "340px"))),
+        column(6, div(class = "table-card", h4("Métricas comparativas"), tableOutput("tabla_comparacion_modelos")))
+      ),
+      fluidRow(
+        column(5, div(class = "table-card", h4("Métricas del modelo seleccionado"), tableOutput("tabla_metricas_pronostico"))),
+        column(7, div(class = "table-card", h4("Proyección diaria"), tableOutput("tabla_pronostico")))
       )
     )
   ),
@@ -112,6 +138,9 @@ ui <- navbarPage(
         column(6, div(class = "table-card", h4("Perfil de segmentos de clientes"), tableOutput("tabla_segmentos_clientes"))),
         column(6, div(class = "table-card", h4("Resumen temporal de productos"), tableOutput("tabla_segmentos_productos")))
       ),
+      div(class = "chart-card", h4("Representación PCA de los segmentos de clientes"),
+        p(class = "chart-note", "Cada punto representa un cliente; los colores corresponden a los grupos obtenidos mediante K-means."),
+        plotOutput("grafico_pca_clientes", height = "500px")),
       div(class = "table-card", h4("Productos de mayor venta dentro del segmento temporal"), tableOutput("tabla_productos_segmentados"))
     )
   ),
@@ -127,7 +156,13 @@ ui <- navbarPage(
           p(textOutput("fecha_corte_texto", inline = TRUE))
         ))
       ),
-      div(class = "table-card", h4("Relaciones del modelo base"), tableOutput("tabla_relaciones"))
+      fluidRow(
+        column(6, div(class = "table-card", h4("Relaciones del modelo base"), tableOutput("tabla_relaciones"))),
+        column(6, div(class = "table-card", h4("Registro de limpieza y transformación"), tableOutput("tabla_calidad")))
+      ),
+      div(class = "table-card", h4("Sensibilidad de la segmentación temporal de productos"),
+        p("La tabla muestra cuántos productos cambiarían de grupo al modificar moderadamente los umbrales."),
+        tableOutput("tabla_sensibilidad_productos"))
     )
   ),
 
@@ -135,7 +170,7 @@ ui <- navbarPage(
     div(class = "page-wrap",
       div(class = "section-intro", h2("Conclusiones ejecutivas"), p("Los hallazgos sintetizan los resultados del proyecto y orientan decisiones de seguimiento comercial.")),
       div(class = "conclusion-card", uiOutput("conclusiones_dinamicas")),
-      div(class = "download-card", h4("Exportar seleccion"), p("La descarga contiene los registros correspondientes a los filtros activos."),
+      div(class = "download-card", h4("Exportar selección"), p("La descarga contiene los registros correspondientes a los filtros activos."),
         downloadButton("descargar", "Descargar CSV filtrado", class = "btn-download"))
     )
   ),
@@ -143,6 +178,14 @@ ui <- navbarPage(
 )
 
 server <- function(input, output, session) {
+  session$onFlushed(function() {
+    updateSelectizeInput(
+      session, "producto",
+      choices = c("TODOS", sort(unique(ventas$producto))),
+      selected = "TODOS", server = TRUE
+    )
+  }, once = TRUE)
+
   observeEvent(input$limpiar, {
     updateDateRangeInput(session, "fechas", start = metadata$fecha_inicio, end = metadata$fecha_corte)
     updateSelectInput(session, "empresa", selected = "TODAS")
@@ -218,12 +261,53 @@ server <- function(input, output, session) {
       coord_flip() + scale_y_continuous(labels = function(x) paste0("$", round(x / 1e6, 1), " M")) +
       labs(x = NULL, y = "Ventas") + theme_minimal(base_size = 11) + theme(panel.grid.major.y = element_blank())
   })
-  resumen_productos <- reactive(datos_filtrados()[, .(frecuencia = uniqueN(numero_egreso), ventas = sum(valor_venta)), by = producto])
+  resumen_productos <- reactive(datos_filtrados()[, .(
+    frecuencia = uniqueN(numero_egreso), ventas = sum(valor_venta)
+  ), by = producto])
+  resumen_clientes <- reactive(datos_filtrados()[, .(
+    ventas = sum(valor_venta), frecuencia = uniqueN(numero_egreso)
+  ), by = cliente])
+  output$grafico_productos_valor <- renderPlot({
+    d <- resumen_productos()[order(-ventas)][1:min(.N, 10)]
+    validate(need(nrow(d) > 0, "No existen datos para la selección."))
+    d[, etiqueta := acortar_texto(producto)]
+    ggplot(d[order(ventas)], aes(reorder(etiqueta, ventas), ventas)) +
+      geom_col(fill = azul, width = 0.66) + coord_flip() +
+      scale_y_continuous(labels = function(x) moneda_ui(x)) +
+      labs(x = NULL, y = "Valor de ventas") + theme_minimal(base_size = 10) +
+      theme(panel.grid.major.y = element_blank())
+  })
   output$grafico_productos <- renderPlot({
     d <- resumen_productos()[order(-frecuencia)][1:min(.N, 10)]
-    validate(need(nrow(d) > 0, "No existen datos para la seleccion."))
-    ggplot(d[order(frecuencia)], aes(reorder(producto, frecuencia), frecuencia)) + geom_col(fill = turquesa, width = 0.66) +
+    validate(need(nrow(d) > 0, "No existen datos para la selección."))
+    d[, etiqueta := acortar_texto(producto)]
+    ggplot(d[order(frecuencia)], aes(reorder(etiqueta, frecuencia), frecuencia)) + geom_col(fill = turquesa, width = 0.66) +
       coord_flip() + labs(x = NULL, y = "Egresos distintos") + theme_minimal(base_size = 10) + theme(panel.grid.major.y = element_blank())
+  })
+  output$grafico_clientes <- renderPlot({
+    d <- resumen_clientes()[order(-ventas)][1:min(.N, 10)]
+    validate(need(nrow(d) > 0, "No existen datos para la selección."))
+    d[, etiqueta := acortar_texto(cliente)]
+    ggplot(d[order(ventas)], aes(reorder(etiqueta, ventas), ventas)) +
+      geom_col(fill = naranja, width = 0.66) + coord_flip() +
+      scale_y_continuous(labels = function(x) moneda_ui(x)) +
+      labs(x = NULL, y = "Valor de ventas") + theme_minimal(base_size = 10) +
+      theme(panel.grid.major.y = element_blank())
+  })
+  output$grafico_calor <- renderPlot({
+    meses_cortos <- c("Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic")
+    d <- datos_filtrados()[, .(ventas = sum(valor_venta)), by = .(mes, clasificacion)]
+    validate(need(nrow(d) > 0, "No existen datos para la selección."))
+    meses_presentes <- sort(unique(as.integer(format(as.Date(d$mes), "%m"))))
+    d[, mes_etiqueta := factor(meses_cortos[as.integer(format(as.Date(mes), "%m"))],
+      levels = meses_cortos[meses_presentes])]
+    ggplot(d, aes(mes_etiqueta, clasificacion, fill = ventas)) +
+      geom_tile(color = "white", linewidth = 1.05) +
+      geom_text(aes(label = paste0("$", round(ventas / 1e6, 2), " M")),
+        color = "white", fontface = "bold", size = 3.5) +
+      scale_fill_gradient(low = celeste, high = azul, labels = function(x) moneda_ui(x)) +
+      labs(x = "Mes", y = NULL, fill = "Ventas") + theme_minimal(base_size = 11) +
+      theme(panel.grid = element_blank(), legend.position = "none")
   })
   output$tabla_mensual <- renderTable({
     d <- copy(tendencia()); d[, `:=`(Mes = format(as.Date(mes), "%Y-%m"), Ventas = moneda_ui(ventas), Egresos = format(egresos, big.mark = ","))]
@@ -234,7 +318,8 @@ server <- function(input, output, session) {
     d[, .(Producto = producto, Frecuencia = format(frecuencia, big.mark = ","), Ventas = moneda_ui(ventas))]
   }, striped = TRUE, hover = TRUE, spacing = "xs")
 
-  output$pron_horizonte <- renderText(paste0(metadata$horizonte_pronostico, " dias"))
+  output$pron_modelo <- renderText(mostrar_modelo(metadata$modelo_pronostico))
+  output$pron_horizonte <- renderText(paste0(metadata$horizonte_pronostico, " días"))
   output$pron_total <- renderText(moneda_ui(sum(modelo$pronostico_ventas$ventas_proyectadas)))
   output$pron_wape <- renderText({
     x <- modelo$metricas_pronostico[metrica == "WAPE", resultado]
@@ -251,6 +336,34 @@ server <- function(input, output, session) {
       scale_y_continuous(labels = function(x) moneda_ui(x)) +
       labs(x = NULL, y = "Ventas") + theme_minimal(base_size = 12) + theme(panel.grid.minor = element_blank())
   })
+  output$grafico_comparacion_modelos <- renderPlot({
+    d <- copy(modelo$comparacion_modelos_pronostico)
+    d[, `:=`(
+      modelo_mostrar = mostrar_modelo(modelo),
+      WAPE_porcentaje = WAPE * 100,
+      estado = fifelse(seleccionado, "Seleccionado", "Comparación")
+    )]
+    ggplot(d[order(-WAPE_porcentaje)],
+      aes(reorder(modelo_mostrar, WAPE_porcentaje), WAPE_porcentaje, fill = estado)) +
+      geom_col(width = 0.66, show.legend = FALSE) + coord_flip() +
+      geom_text(aes(label = paste0(round(WAPE_porcentaje, 2), "%")), hjust = -0.12, color = azul) +
+      scale_fill_manual(values = c("Seleccionado" = turquesa, "Comparación" = "#A8B4C5")) +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.18))) +
+      labs(x = NULL, y = "WAPE") + theme_minimal(base_size = 11) +
+      theme(panel.grid.major.y = element_blank())
+  })
+  output$tabla_comparacion_modelos <- renderTable({
+    d <- copy(modelo$comparacion_modelos_pronostico)
+    salida <- d[, .(
+      Modelo = mostrar_modelo(modelo),
+      WAPE = paste0(round(WAPE * 100, 2), "%"),
+      MAE = moneda_ui(MAE),
+      RMSE = moneda_ui(RMSE),
+      Seleccion = fifelse(seleccionado, "MODELO FINAL", "COMPARACIÓN")
+    )]
+    setnames(salida, "Seleccion", "Selección")
+    salida
+  }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_metricas_pronostico <- renderTable({
     d <- copy(modelo$metricas_pronostico)
     d[, resultado_mostrar := fifelse(
@@ -259,12 +372,16 @@ server <- function(input, output, session) {
       fifelse(metrica == "WAPE", paste0(round(resultado * 100, 2), "%"),
         paste0(round(resultado, 2), "%"))
     )]
-    d[, .(Metrica = metrica, Resultado = resultado_mostrar)]
+    salida <- d[, .(Metrica = metrica, Resultado = resultado_mostrar)]
+    setnames(salida, "Metrica", "Métrica")
+    salida
   }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_pronostico <- renderTable({
     d <- copy(modelo$pronostico_ventas)[1:10]
     d[, `:=`(Fecha = format(as.Date(fecha_despacho), "%d/%m/%Y"), Proyeccion = moneda_ui(ventas_proyectadas))]
-    d[, .(Fecha, Dia = dia_semana, Proyeccion)]
+    salida <- d[, .(Fecha, Dia = dia_semana, Proyeccion)]
+    setnames(salida, c("Dia", "Proyeccion"), c("Día", "Proyección"))
+    salida
   }, striped = TRUE, hover = TRUE, spacing = "s")
 
   clientes_segmentados <- reactive({
@@ -279,16 +396,17 @@ server <- function(input, output, session) {
   })
   output$grafico_segmentos_clientes <- renderPlot({
     d <- clientes_segmentados()[, .(clientes = .N, ventas = sum(ventas)), by = segmento][order(-ventas)]
-    validate(need(nrow(d) > 0, "No existen clientes para la seleccion."))
+    validate(need(nrow(d) > 0, "No existen clientes para la selección."))
     ggplot(d, aes(reorder(segmento, ventas), ventas, fill = segmento)) + geom_col(show.legend = FALSE, width = 0.67) +
       coord_flip() + scale_y_continuous(labels = function(x) moneda_ui(x)) +
       scale_fill_manual(values = c("Clientes estrategicos" = azul, "Clientes por reactivar" = "#94A3B8",
         "Clientes frecuentes de desarrollo" = turquesa, "Clientes de desarrollo" = celeste)) +
+      scale_x_discrete(labels = function(x) mostrar_segmento_cliente(as.character(x))) +
       labs(x = NULL, y = "Ventas") + theme_minimal(base_size = 12) + theme(panel.grid.major.y = element_blank())
   })
   output$grafico_segmentos_productos <- renderPlot({
     d <- productos_segmentados()[, .(productos = .N), by = segmento_temporal][order(productos)]
-    validate(need(nrow(d) > 0, "No existen productos para la seleccion."))
+    validate(need(nrow(d) > 0, "No existen productos para la selección."))
     ggplot(d, aes(reorder(segmento_temporal, productos), productos, fill = segmento_temporal)) + geom_col(show.legend = FALSE, width = 0.67) +
       coord_flip() + scale_fill_manual(values = c("Demanda estable" = turquesa, "Demanda creciente" = azul,
         "Demanda decreciente" = naranja, "Demanda intermitente" = "#94A3B8", "Demanda variable" = celeste)) +
@@ -297,6 +415,7 @@ server <- function(input, output, session) {
   output$tabla_segmentos_clientes <- renderTable({
     d <- clientes_segmentados()[, .(Clientes = .N, Ventas = sum(ventas), Frecuencia = mean(frecuencia_egresos), Recencia = mean(recencia_dias)), by = segmento]
     d[, `:=`(Ventas = moneda_ui(Ventas), Frecuencia = round(Frecuencia, 1), Recencia = round(Recencia, 1))]
+    d[, segmento := mostrar_segmento_cliente(segmento)]
     setnames(d, "segmento", "Segmento"); d
   }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_segmentos_productos <- renderTable({
@@ -306,9 +425,28 @@ server <- function(input, output, session) {
   }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_productos_segmentados <- renderTable({
     d <- productos_segmentados()[order(-ventas_total)][1:min(.N, 15)]
-    d[, .(Producto = producto, Clasificacion = clasificacion, Segmento = segmento_temporal,
+    salida <- d[, .(Producto = producto, Clasificacion = clasificacion, Segmento = segmento_temporal,
       Ventas = moneda_ui(ventas_total), Meses_activos = meses_activos)]
+    setnames(salida, "Clasificacion", "Clasificación")
+    salida
   }, striped = TRUE, hover = TRUE, spacing = "xs")
+  output$grafico_pca_clientes <- renderPlot({
+    d <- clientes_segmentados()
+    validate(need(nrow(d) >= 3, "No existen suficientes clientes para representar los segmentos."))
+    ggplot(d, aes(componente_1, componente_2, color = segmento)) +
+      geom_point(alpha = 0.72, size = 2.3) +
+      scale_color_manual(
+        values = c("Clientes estrategicos" = azul, "Clientes por reactivar" = naranja,
+          "Clientes frecuentes de desarrollo" = turquesa, "Clientes de desarrollo" = celeste),
+        labels = function(x) mostrar_segmento_cliente(as.character(x))
+      ) +
+      labs(
+        x = paste0("Componente 1 (", round(modelo$varianza_pca_clientes[1, porcentaje_varianza], 1), "%)"),
+        y = paste0("Componente 2 (", round(modelo$varianza_pca_clientes[2, porcentaje_varianza], 1), "%)"),
+        color = "Segmento"
+      ) + theme_minimal(base_size = 11) +
+      theme(panel.grid.minor = element_blank(), legend.position = "bottom")
+  })
 
   output$tabla_validacion_macro <- renderTable({
     d <- copy(modelo$validacion_macro); setnames(d, c("Prueba", "Resultado", "Estado")); d
@@ -318,18 +456,52 @@ server <- function(input, output, session) {
     d[, Estado := ifelse(claves_sin_coincidencia == 0, "APROBADO", "REVISAR")]
     setnames(d, c("Relacion", "Claves sin coincidencia", "Estado")); d
   }, striped = TRUE, hover = TRUE, spacing = "s")
+  output$tabla_calidad <- renderTable({
+    d <- copy(modelo$modelo_base$registro_cambios)
+    salida <- d[, .(Control = control, Antes = antes, Despues = despues, Accion = accion)]
+    setnames(salida, c("Despues", "Accion"), c("Después", "Acción"))
+    salida
+  }, striped = TRUE, hover = TRUE, spacing = "s")
+  output$tabla_sensibilidad_productos <- renderTable({
+    d <- copy(modelo$sensibilidad_segmentacion_productos)
+    salida <- d[, .(
+      Escenario = escenario,
+      Umbral_cambio = paste0(umbral_cambio, "%"),
+      Umbral_variabilidad = format(round(umbral_variabilidad, 2), nsmall = 2),
+      Productos_reclasificados = productos_reclasificados,
+      Porcentaje_productos = paste0(round(porcentaje_productos, 1), "%"),
+      Ventas_reclasificadas = moneda_ui(ventas_reclasificadas)
+    )]
+    setnames(salida,
+      c("Umbral_cambio", "Umbral_variabilidad", "Productos_reclasificados", "Porcentaje_productos", "Ventas_reclasificadas"),
+      c("Umbral de cambio", "Umbral de variabilidad", "Productos reclasificados", "Porcentaje de productos", "Ventas reclasificadas")
+    )
+    salida
+  }, striped = TRUE, hover = TRUE, spacing = "s")
   output$fecha_corte_texto <- renderText(paste("La fecha de corte corresponde al", format(as.Date(metadata$fecha_corte), "%d/%m/%Y"), "."))
 
   output$conclusiones_dinamicas <- renderUI({
     seg <- modelo$resumen_segmentos_clientes[order(-ventas)][1]
     prod <- modelo$resumen_segmentos_productos[order(-ventas)][1]
+    producto_valor <- modelo$ranking_productos_valor[1]
+    producto_frecuencia <- modelo$ranking_productos_frecuencia[1]
+    cliente_valor <- modelo$ranking_clientes_valor[1]
     proy <- sum(modelo$pronostico_ventas$ventas_proyectadas)
     wape <- modelo$metricas_pronostico[metrica == "WAPE", resultado] * 100
     tagList(
-      div(class = "insight", span("01"), p(HTML(paste0("El segmento <strong>", seg$segmento, "</strong> concentra ", round(seg$participacion_ventas, 1), "% del valor de ventas y requiere seguimiento prioritario.")))),
-      div(class = "insight", span("02"), p(HTML(paste0("La categoría <strong>", prod$segmento_temporal, "</strong> concentra ", round(prod$participacion_ventas, 1), "% del valor analizado en productos y orienta la planificación de abastecimiento.")))),
-      div(class = "insight", span("03"), p(HTML(paste0("La proyección para los siguientes 30 dias alcanza <strong>", moneda_ui(proy), "</strong>. La validación historica registró un WAPE de ", round(wape, 1), "%.")))),
-      div(class = "insight warning", span("!"), p("Agosto se interpreta como periodo parcial. Los indicadores de metas, costos y zonas no se presentan porque la informacion disponible no los incorpora."))
+      div(class = "insight", span("01"), p(HTML(paste0("El producto con mayor impacto económico es <strong>", producto_valor$producto,
+        "</strong>, con ", moneda_ui(producto_valor$ventas), ".")))),
+      div(class = "insight", span("02"), p(HTML(paste0("El producto con mayor rotación es <strong>", producto_frecuencia$producto,
+        "</strong>, con ", format(producto_frecuencia$frecuencia_egresos, big.mark = ","), " egresos distintos.")))),
+      div(class = "insight", span("03"), p(HTML(paste0("El cliente con mayor aporte es <strong>", cliente_valor$cliente,
+        "</strong>, con ", moneda_ui(cliente_valor$ventas), ".")))),
+      div(class = "insight", span("04"), p(HTML(paste0("El segmento <strong>", mostrar_segmento_cliente(seg$segmento),
+        "</strong> concentra ", round(seg$participacion_ventas, 1), "% del valor de ventas.")))),
+      div(class = "insight", span("05"), p(HTML(paste0("La categoría <strong>", prod$segmento_temporal,
+        "</strong> concentra ", round(prod$participacion_ventas, 1), "% del valor analizado en productos.")))),
+      div(class = "insight", span("06"), p(HTML(paste0("El modelo <strong>", mostrar_modelo(metadata$modelo_pronostico),
+        "</strong> proyecta ", moneda_ui(proy), " para 30 días y obtuvo un WAPE de ", round(wape, 1), "%.")))),
+      div(class = "insight warning", span("!"), p("Agosto se interpreta como periodo parcial. Los indicadores de metas, costos y zonas no se presentan porque la información disponible no los incorpora."))
     )
   })
   output$descargar <- downloadHandler(

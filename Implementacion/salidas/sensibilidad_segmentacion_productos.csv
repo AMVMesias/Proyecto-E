@@ -1,0 +1,6 @@
+﻿escenario;umbral_cambio;umbral_variabilidad;productos_reclasificados;porcentaje_productos;ventas_reclasificadas
+Referencia;25;0.45;0;0;0
+Cambio 20%;20;0.45;97;5.91463414634146;1064454.04138622
+Cambio 30%;30;0.45;80;4.87804878048781;2340497.79254526
+Variabilidad 0.40;25;0.4;27;1.64634146341463;38407.2114087182
+Variabilidad 0.50;25;0.5;20;1.21951219512195;16125.3915269202

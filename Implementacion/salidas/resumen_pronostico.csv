@@ -1,5 +1,7 @@
 ﻿indicador;resultado
 Fecha de corte;2026-08-16
 Horizonte;30 dias
-Venta proyectada acumulada;$2,384,947
-Promedio diario proyectado;$79,498
+Modelo seleccionado;Promedio reciente por dia
+Venta proyectada acumulada;$2,777,369
+Promedio diario proyectado;$92,579
+WAPE de validacion;6.37%

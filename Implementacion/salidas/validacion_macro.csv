@@ -3,7 +3,12 @@ Registros del modelo base disponibles;TRUE;APROBADO
 Ventas diarias concilian con el total general;TRUE;APROBADO
 Agosto identificado como periodo parcial;TRUE;APROBADO
 Pronostico sin valores negativos o no finitos;TRUE;APROBADO
-Validacion historica del pronostico disponible;TRUE;APROBADO
+Validacion temporal de todos los modelos disponible;TRUE;APROBADO
+El modelo seleccionado tiene el menor WAPE;TRUE;APROBADO
 Todos los clientes tienen un segmento;TRUE;APROBADO
+La representacion PCA de clientes es valida;TRUE;APROBADO
 Todos los productos tienen un segmento temporal;TRUE;APROBADO
 La serie temporal usa solo meses completos;TRUE;APROBADO
+Los rankings cubren productos y clientes;TRUE;APROBADO
+La sensibilidad conserva el escenario de referencia;TRUE;APROBADO
+El registro de limpieza del modelo base esta disponible;TRUE;APROBADO
