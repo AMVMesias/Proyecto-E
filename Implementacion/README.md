@@ -28,4 +28,4 @@ carpeta puede procesarse sin depender de una ruta externa.
 - `salidas/recomendaciones_macro.csv`: trazabilidad entre hallazgos, interpretación, recomendaciones e indicadores.
 - `salidas/validacion_macro.csv`: controles automáticos de la ejecución.
 - `evidencias/graficos_r`: gráficos analíticos generados directamente por `macro_bi.R`.
-- `evidencias/capturas_shiny`: capturas finales de las seis secciones del dashboard.
+- `evidencias/capturas_shiny`: cinco capturas finales seleccionadas para documentar el dashboard; la pestaña de conclusiones se conserva en Shiny, pero no requiere evidencia gráfica en el informe.

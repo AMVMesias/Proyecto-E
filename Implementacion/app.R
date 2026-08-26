@@ -68,7 +68,7 @@ ui <- navbarPage(
   theme = bs_theme(version = 5, bootswatch = "flatly", primary = azul, secondary = celeste,
                    bg = "#F4F7FB", fg = "#172033", base_font = font_google("Inter")),
   header = tagList(
-      tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=2")),
+      tags$head(tags$link(rel = "stylesheet", type = "text/css", href = "styles.css?v=6")),
     div(class = "filter-strip",
       fluidRow(
         column(3, dateRangeInput("fechas", "Periodo", start = metadata$fecha_inicio,
@@ -204,7 +204,14 @@ ui <- navbarPage(
         downloadButton("descargar", "Descargar CSV filtrado", class = "btn-download"))
     )
   ),
-  bslib::nav_item(tags$span(class = "student-nav", icon("user-graduate"), " Wladimir Marcelo Nacimba Ona"))
+  bslib::nav_item(
+    tags$span(
+      class = "student-nav",
+      icon("user-graduate"),
+      " Elaborado por: ",
+      tags$strong("Wladimir Marcelo Nacimba Oña")
+    )
+  )
 )
 
 server <- function(input, output, session) {
