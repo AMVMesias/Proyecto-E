@@ -75,8 +75,24 @@ turquesa <- "#10B8A6"
 naranja <- "#F59E0B"
 gris <- "#475569"
 
+# El valor 0.0001 aparece como precio estrictamente positivo en la fuente, pero
+# es materialmente simbólico. Se conserva sin reinterpretarlo y se identifica
+# para impedir que la presentación lo convierta de manera engañosa en $0.
+precio_simbolico_referencia <- 0.0001
+ventas[, precio_simbolico :=
+  abs(precio_cliente - precio_simbolico_referencia) < sqrt(.Machine$double.eps)]
+
 moneda <- function(x, decimales = 0) {
   paste0("$", format(round(x, decimales), big.mark = ",", nsmall = decimales, scientific = FALSE))
+}
+
+mostrar_modelo_texto <- function(x) {
+  fifelse(x == "Regresion logaritmica", "Regresión logarítmica",
+    fifelse(x == "Promedio reciente por dia", "Promedio reciente por día", x))
+}
+
+mostrar_segmento_cliente_texto <- function(x) {
+  fifelse(x == "Clientes estrategicos", "Clientes estratégicos", x)
 }
 
 guardar_csv <- function(datos, nombre) {
@@ -503,11 +519,30 @@ ventas_clasificacion_mes <- ventas[mes %in% meses_completos, .(
   ventas = sum(valor_venta)
 ), by = .(mes, clasificacion)][order(mes, clasificacion)]
 
+resumen_precios_simbolicos <- ventas[precio_simbolico == TRUE, .(
+  registros = .N,
+  egresos = uniqueN(numero_egreso),
+  cantidad = sum(cantidad),
+  valor_venta = sum(valor_venta)
+), by = .(producto_id, producto, clasificacion)][order(-registros, producto)]
+
+dia_corte_parcial <- as.integer(format(as.Date(fecha_corte), "%d"))
+ventas_periodo_comparable <- ventas[
+  as.integer(format(as.Date(fecha_despacho), "%d")) <= dia_corte_parcial,
+  .(ventas = sum(valor_venta)), by = mes
+][order(mes)]
+mes_parcial <- ventas_mensuales_macro[estado_periodo == "PARCIAL", mes][1]
+venta_parcial_comparable <- ventas_periodo_comparable[mes == mes_parcial, ventas]
+promedio_comparable_previo <- ventas_periodo_comparable[mes < mes_parcial, mean(ventas)]
+variacion_periodo_parcial_comparable <-
+  (venta_parcial_comparable / promedio_comparable_previo - 1) * 100
+
 hallazgos_macro <- data.table(
   tema = c(
-    "Ventas acumuladas", "Producto con mayor impacto economico", "Producto con mayor rotacion",
-    "Cliente con mayor aporte", "Responsable con mayor valor gestionado", "Pronostico seleccionado",
-    "Segmento principal de clientes", "Comportamiento temporal principal", "Limitaciones"
+    "Ventas acumuladas", "Producto con mayor impacto económico", "Producto con mayor rotación",
+    "Cliente con mayor aporte", "Responsable con mayor valor gestionado", "Pronóstico seleccionado",
+    "Segmento principal de clientes", "Comportamiento temporal principal",
+    "Periodo parcial comparable", "Precios simbólicos por validar", "Limitaciones"
   ),
   hallazgo = c(
     moneda(sum(ventas$valor_venta)),
@@ -517,13 +552,87 @@ hallazgos_macro <- data.table(
     paste0(ranking_clientes_valor[1, cliente], " (", moneda(ranking_clientes_valor[1, ventas]), ")"),
     paste0(ranking_responsables_valor[1, jefe_operativo], " (",
            moneda(ranking_responsables_valor[1, ventas]), ")"),
-    paste0(modelo_seleccionado, " con WAPE de ",
+    paste0(mostrar_modelo_texto(modelo_seleccionado), " con WAPE de ",
            round(metricas_modelo_seleccionado$WAPE * 100, 2), "%"),
-    paste0(resumen_segmentos_clientes[1, segmento], " (",
+    paste0(mostrar_segmento_cliente_texto(resumen_segmentos_clientes[1, segmento]), " (",
            round(resumen_segmentos_clientes[1, participacion_ventas], 1), "% de las ventas)"),
     paste0(resumen_segmentos_productos[1, segmento_temporal], " (",
            round(resumen_segmentos_productos[1, participacion_ventas], 1), "% de las ventas)"),
+    paste0("Los primeros ", dia_corte_parcial, " días de agosto se ubican ",
+           abs(round(variacion_periodo_parcial_comparable, 1)), "% ",
+           ifelse(variacion_periodo_parcial_comparable < 0, "por debajo", "por encima"),
+           " del promedio comparable previo."),
+    paste0(sum(resumen_precios_simbolicos$registros),
+           " registros con precio de $0.0001, conservados e identificados para validación comercial."),
     "No existen metas comerciales, costos internos ni zonas en la fuente disponible."
+  )
+)
+
+clientes_reactivar <- resumen_segmentos_clientes[
+  segmento == "Clientes por reactivar", clientes
+]
+recencia_reactivar <- resumen_segmentos_clientes[
+  segmento == "Clientes por reactivar", recencia_promedio
+]
+
+recomendaciones_macro <- data.table(
+  id = 1:9,
+  tema = c(
+    "Concentración de clientes", "Clientes de baja actividad", "Valor y rotación de productos",
+    "Comportamiento temporal", "Planificación con pronóstico", "Gestión por responsable",
+    "Seguimiento de agosto", "Precios simbólicos", "Ampliación de fuentes"
+  ),
+  hallazgo = c(
+    paste0(resumen_segmentos_clientes[1, clientes], " clientes concentran ",
+           round(resumen_segmentos_clientes[1, participacion_ventas], 1), "% de las ventas."),
+    paste0(clientes_reactivar, " clientes presentan una recencia promedio de ",
+           round(recencia_reactivar, 1), " días."),
+    paste0(ranking_productos_valor[1, producto], " lidera por valor, mientras ",
+           ranking_productos_frecuencia[1, producto], " lidera por frecuencia."),
+    paste0(resumen_segmentos_productos[1, segmento_temporal], " representa ",
+           round(resumen_segmentos_productos[1, participacion_ventas], 1), "% del valor analizado."),
+    paste0("El modelo seleccionado proyecta ", moneda(sum(pronostico_ventas$ventas_proyectadas)),
+           " a 30 días con WAPE de ", round(metricas_modelo_seleccionado$WAPE * 100, 2), "%."),
+    paste0(ranking_responsables_valor[1, jefe_operativo], " gestiona el mayor valor: ",
+           moneda(ranking_responsables_valor[1, ventas]), "."),
+    paste0("El periodo 1-", dia_corte_parcial, " de agosto varia ",
+           round(variacion_periodo_parcial_comparable, 1), "% frente al promedio comparable previo."),
+    paste0(sum(resumen_precios_simbolicos$registros),
+           " registros utilizan el precio simbólico de $0.0001."),
+    "La fuente no contiene metas, costos internos ni zonas."
+  ),
+  interpretacion = c(
+    "La mayor parte del valor depende del grupo de clientes con actividad y aporte superiores.",
+    "La baja actividad no demuestra abandono, pero permite priorizar una revisión comercial.",
+    "Impacto económico y rotación representan decisiones distintas de abastecimiento.",
+    "La estabilidad concentra el valor, mientras los cambios de tendencia requieren seguimiento diferenciado.",
+    "La proyección es una referencia operativa con error histórico medido, no una cifra garantizada.",
+    "El valor gestionado no equivale a cumplimiento ni rentabilidad porque no existen metas ni costos.",
+    "Además de ser parcial, agosto muestra una reducción frente a periodos equivalentes anteriores.",
+    "El valor es positivo y procede de la fuente, pero no debe presentarse redondeado como una venta de $0.",
+    "La ausencia impide medir rentabilidad, cumplimiento y desempeño geográfico."
+  ),
+  recomendacion = c(
+    "Aplicar seguimiento diferenciado a la cartera de mayor aporte y revisar mensualmente continuidad y concentración.",
+    "Priorizar los clientes por reactivar según valor histórico, recencia y frecuencia antes de ejecutar contactos comerciales.",
+    "Planificar por separado productos de alto valor y productos de alta rotación para evitar decisiones basadas en un solo ranking.",
+    "Mantener una base de reposición para la demanda estable y revisar mensualmente productos crecientes, decrecientes e intermitentes.",
+    "Usar la proyección como referencia para capacidad y compras, comparando posteriormente ventas observadas y proyectadas.",
+    "Comparar responsables por valor, egresos y clientes; no calificarlos por cumplimiento hasta disponer de metas reales.",
+    "Revisar clientes, clasificaciones y productos que explican la disminución comparable de agosto antes de atribuirla solo al corte parcial.",
+    "Validar con el área responsable la naturaleza de esos registros y definir una regla antes de incluirlos o excluirlos de KPI comerciales.",
+    "Incorporar en una futura versión tablas autorizadas de metas, costos y zonas con claves y periodicidad definidas."
+  ),
+  indicador_seguimiento = c(
+    "Participación de ventas y clientes activos del segmento principal.",
+    "Clientes reactivados, recencia y ventas posteriores al contacto.",
+    "Ventas, frecuencia de egresos y disponibilidad por producto.",
+    "Productos y ventas por segmento temporal cada mes.",
+    "WAPE mensual y diferencia entre venta observada y proyectada.",
+    "Ventas, egresos y clientes por responsable; cumplimiento cuando existan metas.",
+    "Ventas acumuladas de los primeros 16 dias frente a periodos comparables.",
+    "Registros simbólicos pendientes, clasificados y resueltos.",
+    "Cobertura de metas, costos y zonas en el modelo."
   )
 )
 
@@ -533,6 +642,8 @@ guardar_csv(ranking_clientes_valor, "ranking_clientes_valor.csv")
 guardar_csv(ranking_responsables_valor, "ranking_responsables_valor.csv")
 guardar_csv(ventas_clasificacion_mes, "ventas_clasificacion_mes.csv")
 guardar_csv(hallazgos_macro, "hallazgos_macro.csv")
+guardar_csv(resumen_precios_simbolicos, "precios_simbolicos_resumen.csv")
+guardar_csv(recomendaciones_macro, "recomendaciones_macro.csv")
 
 # -----------------------------------------------------------------------------
 # 7. EVIDENCIAS VISUALES GENERADAS DESDE R
@@ -731,16 +842,18 @@ validacion_macro <- data.table(
     "Registros del modelo base disponibles",
     "Ventas diarias concilian con el total general",
     "Agosto identificado como periodo parcial",
-    "Pronostico sin valores negativos o no finitos",
-    "Validacion temporal de todos los modelos disponible",
+    "Pronóstico sin valores negativos o no finitos",
+    "Validación temporal de todos los modelos disponible",
     "El modelo seleccionado tiene el menor WAPE",
     "Todos los clientes tienen un segmento",
-    "La representacion PCA de clientes es valida",
+    "La representación PCA de clientes es válida",
     "Todos los productos tienen un segmento temporal",
     "La serie temporal usa solo meses completos",
     "Los rankings cubren productos y clientes",
     "La sensibilidad conserva el escenario de referencia",
-    "El registro de limpieza del modelo base esta disponible"
+    "El registro de limpieza del modelo base esta disponible",
+    "Los precios simbólicos están identificados y conciliados",
+    "Las recomendaciones conservan trazabilidad completa"
   ),
   resultado = c(
     nrow(ventas) == modelo_base$metadata$registros,
@@ -759,7 +872,13 @@ validacion_macro <- data.table(
     nrow(ranking_productos_valor) == uniqueN(ventas$producto_id) &&
       nrow(ranking_clientes_valor) == uniqueN(ventas$cliente_id),
     sensibilidad_segmentacion_productos[escenario == "Referencia", productos_reclasificados] == 0,
-    !is.null(modelo_base$registro_cambios) && nrow(modelo_base$registro_cambios) > 0
+    !is.null(modelo_base$registro_cambios) && nrow(modelo_base$registro_cambios) > 0,
+    sum(ventas$precio_simbolico) == sum(resumen_precios_simbolicos$registros) &&
+      isTRUE(all.equal(ventas[precio_simbolico == TRUE, sum(valor_venta)],
+                       sum(resumen_precios_simbolicos$valor_venta), tolerance = 1e-12)),
+    nrow(recomendaciones_macro) >= 8 &&
+      all(complete.cases(recomendaciones_macro)) &&
+      all(nzchar(recomendaciones_macro$recomendacion))
   )
 )
 validacion_macro[, estado := fifelse(resultado, "APROBADO", "REVISAR")]
@@ -767,6 +886,8 @@ guardar_csv(validacion_macro, "validacion_macro.csv")
 if (!all(validacion_macro$resultado)) {
   stop("La validacion de la Macroactividad requiere revision.", call. = FALSE)
 }
+
+modelo_base$fact_ventas <- ventas
 
 modelo_macro <- list(
   metadata = list(
@@ -781,6 +902,9 @@ modelo_macro <- list(
     umbral_cambio_productos = umbral_cambio,
     umbral_variabilidad_productos = umbral_variabilidad,
     varianza_pca_clientes = varianza_pca_clientes,
+    registros_precio_simbolico = sum(ventas$precio_simbolico),
+    valor_precio_simbolico = sum(ventas[precio_simbolico == TRUE, valor_venta]),
+    variacion_periodo_parcial_comparable = variacion_periodo_parcial_comparable,
     nota_limitaciones = "La fuente disponible no incluye metas comerciales, costos internos ni zonas."
   ),
   modelo_base = modelo_base,
@@ -806,6 +930,8 @@ modelo_macro <- list(
   ranking_responsables_valor = ranking_responsables_valor,
   ventas_clasificacion_mes = ventas_clasificacion_mes,
   hallazgos_macro = hallazgos_macro,
+  precios_simbolicos_resumen = resumen_precios_simbolicos,
+  recomendaciones_macro = recomendaciones_macro,
   validacion_macro = validacion_macro
 )
 saveRDS(modelo_macro, file.path(dir_data, "modelo_macro.rds"), compress = "gzip")

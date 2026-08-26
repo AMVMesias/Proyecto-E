@@ -13,6 +13,9 @@ suppressPackageStartupMessages({
 modelo <- readRDS(file.path("data", "modelo_macro.rds"))
 ventas <- as.data.table(modelo$modelo_base$fact_ventas)
 metadata <- modelo$metadata
+if (!"precio_simbolico" %in% names(ventas)) {
+  ventas[, precio_simbolico := abs(precio_cliente - 0.0001) < sqrt(.Machine$double.eps)]
+}
 
 azul <- "#082E6D"
 celeste <- "#00A6D6"
@@ -22,6 +25,13 @@ gris <- "#64748B"
 
 moneda_ui <- function(x, decimales = 0) {
   paste0("$", format(round(x, decimales), big.mark = ",", nsmall = decimales, scientific = FALSE))
+}
+
+moneda_detalle_ui <- function(x) {
+  ifelse(abs(x) > 0 & abs(x) < 1,
+    paste0("$", format(round(x, 4), big.mark = ",", nsmall = 4, scientific = FALSE)),
+    moneda_ui(x)
+  )
 }
 
 mostrar_modelo <- function(x) {
@@ -35,6 +45,20 @@ mostrar_segmento_cliente <- function(x) {
 
 acortar_texto <- function(x, maximo = 42L) {
   fifelse(nchar(x) > maximo, paste0(substr(x, 1L, maximo - 3L), "..."), x)
+}
+
+crear_etiquetas_unicas <- function(texto, identificador, maximo = 42L) {
+  etiqueta <- acortar_texto(texto, maximo)
+  repetida <- duplicated(etiqueta) | duplicated(etiqueta, fromLast = TRUE)
+  if (any(repetida)) {
+    sufijo <- paste0(" [", identificador[repetida], "]")
+    espacio <- pmax(12L, maximo - nchar(sufijo))
+    etiqueta[repetida] <- paste0(
+      mapply(acortar_texto, texto[repetida], espacio, USE.NAMES = FALSE),
+      sufijo
+    )
+  }
+  etiqueta
 }
 
 ui <- navbarPage(
@@ -162,7 +186,10 @@ ui <- navbarPage(
       ),
       div(class = "table-card", h4("Sensibilidad de la segmentación temporal de productos"),
         p("La tabla muestra cuántos productos cambiarían de grupo al modificar moderadamente los umbrales."),
-        tableOutput("tabla_sensibilidad_productos"))
+        tableOutput("tabla_sensibilidad_productos")),
+      div(class = "table-card", h4("Precios simbólicos pendientes de validación"),
+        p("Los registros se conservan porque proceden de la fuente. Su valor no se redondea a cero ni se interpreta sin una regla comercial."),
+        tableOutput("tabla_precios_simbolicos"))
     )
   ),
 
@@ -170,6 +197,9 @@ ui <- navbarPage(
     div(class = "page-wrap",
       div(class = "section-intro", h2("Conclusiones ejecutivas"), p("Los hallazgos sintetizan los resultados del proyecto y orientan decisiones de seguimiento comercial.")),
       div(class = "conclusion-card", uiOutput("conclusiones_dinamicas")),
+      div(class = "table-card", h4("Recomendaciones y seguimiento"),
+        p("Cada recomendación se vincula con un hallazgo cuantificado y un indicador de seguimiento."),
+        tableOutput("tabla_recomendaciones")),
       div(class = "download-card", h4("Exportar selección"), p("La descarga contiene los registros correspondientes a los filtros activos."),
         downloadButton("descargar", "Descargar CSV filtrado", class = "btn-download"))
     )
@@ -262,15 +292,18 @@ server <- function(input, output, session) {
       labs(x = NULL, y = "Ventas") + theme_minimal(base_size = 11) + theme(panel.grid.major.y = element_blank())
   })
   resumen_productos <- reactive(datos_filtrados()[, .(
-    frecuencia = uniqueN(numero_egreso), ventas = sum(valor_venta)
-  ), by = producto])
+    frecuencia = uniqueN(numero_egreso),
+    ventas = sum(valor_venta),
+    registros_simbolicos = sum(precio_simbolico),
+    solo_precio_simbolico = all(precio_simbolico)
+  ), by = .(producto_id, producto)])
   resumen_clientes <- reactive(datos_filtrados()[, .(
     ventas = sum(valor_venta), frecuencia = uniqueN(numero_egreso)
-  ), by = cliente])
+  ), by = .(cliente_id, cliente)])
   output$grafico_productos_valor <- renderPlot({
     d <- resumen_productos()[order(-ventas)][1:min(.N, 10)]
     validate(need(nrow(d) > 0, "No existen datos para la selección."))
-    d[, etiqueta := acortar_texto(producto)]
+    d[, etiqueta := crear_etiquetas_unicas(producto, producto_id)]
     ggplot(d[order(ventas)], aes(reorder(etiqueta, ventas), ventas)) +
       geom_col(fill = azul, width = 0.66) + coord_flip() +
       scale_y_continuous(labels = function(x) moneda_ui(x)) +
@@ -280,14 +313,14 @@ server <- function(input, output, session) {
   output$grafico_productos <- renderPlot({
     d <- resumen_productos()[order(-frecuencia)][1:min(.N, 10)]
     validate(need(nrow(d) > 0, "No existen datos para la selección."))
-    d[, etiqueta := acortar_texto(producto)]
+    d[, etiqueta := crear_etiquetas_unicas(producto, producto_id)]
     ggplot(d[order(frecuencia)], aes(reorder(etiqueta, frecuencia), frecuencia)) + geom_col(fill = turquesa, width = 0.66) +
       coord_flip() + labs(x = NULL, y = "Egresos distintos") + theme_minimal(base_size = 10) + theme(panel.grid.major.y = element_blank())
   })
   output$grafico_clientes <- renderPlot({
     d <- resumen_clientes()[order(-ventas)][1:min(.N, 10)]
     validate(need(nrow(d) > 0, "No existen datos para la selección."))
-    d[, etiqueta := acortar_texto(cliente)]
+    d[, etiqueta := crear_etiquetas_unicas(cliente, cliente_id)]
     ggplot(d[order(ventas)], aes(reorder(etiqueta, ventas), ventas)) +
       geom_col(fill = naranja, width = 0.66) + coord_flip() +
       scale_y_continuous(labels = function(x) moneda_ui(x)) +
@@ -315,7 +348,15 @@ server <- function(input, output, session) {
   }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_menores <- renderTable({
     d <- resumen_productos()[order(frecuencia, ventas)][1:min(.N, 10)]
-    d[, .(Producto = producto, Frecuencia = format(frecuencia, big.mark = ","), Ventas = moneda_ui(ventas))]
+    d[, .(
+      Producto = producto,
+      Frecuencia = format(frecuencia, big.mark = ","),
+      Ventas = moneda_detalle_ui(ventas),
+      Observacion = fifelse(
+        solo_precio_simbolico, "Precio simbólico por validar",
+        fifelse(registros_simbolicos > 0, "Incluye registros simbólicos", "")
+      )
+    )]
   }, striped = TRUE, hover = TRUE, spacing = "xs")
 
   output$pron_modelo <- renderText(mostrar_modelo(metadata$modelo_pronostico))
@@ -449,7 +490,10 @@ server <- function(input, output, session) {
   })
 
   output$tabla_validacion_macro <- renderTable({
-    d <- copy(modelo$validacion_macro); setnames(d, c("Prueba", "Resultado", "Estado")); d
+    d <- copy(modelo$validacion_macro)
+    d[, resultado := fifelse(resultado, "CUMPLE", "NO CUMPLE")]
+    setnames(d, c("Prueba", "Resultado", "Estado"))
+    d
   }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_relaciones <- renderTable({
     d <- copy(modelo$modelo_base$validacion_relaciones)
@@ -458,7 +502,13 @@ server <- function(input, output, session) {
   }, striped = TRUE, hover = TRUE, spacing = "s")
   output$tabla_calidad <- renderTable({
     d <- copy(modelo$modelo_base$registro_cambios)
-    salida <- d[, .(Control = control, Antes = antes, Despues = despues, Accion = accion)]
+    salida <- d[, .(
+      Control = fifelse(control == "Valores atípicos identificados",
+        "Marcaciones atípicas identificadas", control),
+      Antes = format(antes, big.mark = ",", scientific = FALSE, trim = TRUE),
+      Despues = format(despues, big.mark = ",", scientific = FALSE, trim = TRUE),
+      Accion = accion
+    )]
     setnames(salida, c("Despues", "Accion"), c("Después", "Acción"))
     salida
   }, striped = TRUE, hover = TRUE, spacing = "s")
@@ -478,6 +528,20 @@ server <- function(input, output, session) {
     )
     salida
   }, striped = TRUE, hover = TRUE, spacing = "s")
+
+  output$tabla_precios_simbolicos <- renderTable({
+    d <- copy(modelo$precios_simbolicos_resumen)
+    salida <- d[, .(
+      Producto = producto,
+      Clasificacion = clasificacion,
+      Registros = registros,
+      Egresos = egresos,
+      Valor = moneda_detalle_ui(valor_venta),
+      Estado = "PENDIENTE DE VALIDACIÓN COMERCIAL"
+    )]
+    setnames(salida, "Clasificacion", "Clasificación")
+    salida
+  }, striped = TRUE, hover = TRUE, spacing = "xs")
   output$fecha_corte_texto <- renderText(paste("La fecha de corte corresponde al", format(as.Date(metadata$fecha_corte), "%d/%m/%Y"), "."))
 
   output$conclusiones_dinamicas <- renderUI({
@@ -501,9 +565,24 @@ server <- function(input, output, session) {
         "</strong> concentra ", round(prod$participacion_ventas, 1), "% del valor analizado en productos.")))),
       div(class = "insight", span("06"), p(HTML(paste0("El modelo <strong>", mostrar_modelo(metadata$modelo_pronostico),
         "</strong> proyecta ", moneda_ui(proy), " para 30 días y obtuvo un WAPE de ", round(wape, 1), "%.")))),
-      div(class = "insight warning", span("!"), p("Agosto se interpreta como periodo parcial. Los indicadores de metas, costos y zonas no se presentan porque la información disponible no los incorpora."))
+      div(class = "insight warning", span("!"), p(paste0(
+        "Agosto se interpreta como periodo parcial. Se identificaron ",
+        metadata$registros_precio_simbolico,
+        " registros con precio simbólico pendientes de validación comercial. ",
+        "Los indicadores de metas, costos y zonas no se presentan porque la información disponible no los incorpora."
+      )))
     )
   })
+
+  output$tabla_recomendaciones <- renderTable({
+    d <- copy(modelo$recomendaciones_macro)
+    d[, .(
+      Tema = tema,
+      Hallazgo = hallazgo,
+      Recomendacion = recomendacion,
+      Seguimiento = indicador_seguimiento
+    )] |> setnames("Recomendacion", "Recomendación")
+  }, striped = TRUE, hover = TRUE, spacing = "xs")
   output$descargar <- downloadHandler(
     filename = function() paste0("ventas_filtradas_", Sys.Date(), ".csv"),
     content = function(file) fwrite(datos_filtrados(), file, sep = ";", bom = TRUE)

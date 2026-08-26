@@ -24,5 +24,7 @@ carpeta puede procesarse sin depender de una ruta externa.
 - `salidas/ranking_productos_frecuencia.csv`: rotación por frecuencia de egresos.
 - `salidas/ranking_clientes_valor.csv`: clientes ordenados por valor de ventas.
 - `salidas/sensibilidad_segmentacion_productos.csv`: estabilidad de los segmentos temporales.
+- `salidas/precios_simbolicos_resumen.csv`: registros con precio de 0,0001 identificados sin eliminarlos ni reinterpretarlos.
+- `salidas/recomendaciones_macro.csv`: trazabilidad entre hallazgos, interpretación, recomendaciones e indicadores.
 - `salidas/validacion_macro.csv`: controles automáticos de la ejecución.
 - `evidencias`: gráficos generados directamente desde R y capturas finales del dashboard.
