@@ -58,7 +58,7 @@ if (!length(coincidencias_modelo)) {
 ruta_modelo <- normalizePath(coincidencias_modelo[1], winslash = "/", mustWork = TRUE)
 dir_data <- file.path(project_dir, "data")
 dir_salidas <- file.path(project_dir, "salidas")
-dir_evidencias <- file.path(project_dir, "evidencias")
+dir_evidencias <- file.path(project_dir, "evidencias", "graficos_r")
 dir.create(dir_data, recursive = TRUE, showWarnings = FALSE)
 dir.create(dir_salidas, recursive = TRUE, showWarnings = FALSE)
 dir.create(dir_evidencias, recursive = TRUE, showWarnings = FALSE)

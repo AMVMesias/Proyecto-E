@@ -27,4 +27,5 @@ carpeta puede procesarse sin depender de una ruta externa.
 - `salidas/precios_simbolicos_resumen.csv`: registros con precio de 0,0001 identificados sin eliminarlos ni reinterpretarlos.
 - `salidas/recomendaciones_macro.csv`: trazabilidad entre hallazgos, interpretación, recomendaciones e indicadores.
 - `salidas/validacion_macro.csv`: controles automáticos de la ejecución.
-- `evidencias`: gráficos generados directamente desde R y capturas finales del dashboard.
+- `evidencias/graficos_r`: gráficos analíticos generados directamente por `macro_bi.R`.
+- `evidencias/capturas_shiny`: capturas finales de las seis secciones del dashboard.
